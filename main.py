@@ -7,6 +7,7 @@ PORT = 5555
 server_running = False
 client_running = False
 choice = ""
+choice_set = threading.Event()
 
 def call_server():
     if server_running == False:
@@ -38,16 +39,12 @@ def server():
                 name = "Default"
             conn.sendall(name.encode('utf-8'))
             # Receive the choice
-            while True:
-                data = conn.recv(1024)
-                if data:
-                    print("server received data")
-                    print(data.decode('utf-8'))
-                if data and choice:
-                    connected_to_text.value = f"Opponent chose {data.decode('utf-8')}"
-                    conn.sendall(choice.encode('utf-8'))
-                    break
-            # Evaluate the winner
+            new_data = conn.recv(1024)
+            choice_set.wait()
+            choice_set.clear()
+            choice_text.value = f"You chose {choice}, Opponent chose {new_data.decode('utf-8')}"
+            conn.sendall(choice.encode('utf-8'))
+            evaluate_winner(choice, new_data.decode('utf-8'))
     server_running = False
 
 def client():
@@ -64,46 +61,55 @@ def client():
             data = s.recv(1024)
             connected_to_text.value = f"Connected to {data.decode('utf-8')}"
             # Send the choice
-            while True:
-                if choice:
-                    print("choice selected")
-                    print(choice)
-                    s.sendall(choice.encode('utf-8'))
-                    break
-            while True:
-                data = s.recv(1024)
-                if data:
-                    connected_to_text.value = f"Opponent chose {data.decode('utf-8')}"
-                    break
-            # Evaluate winner
+            choice_set.wait()
+            choice_set.clear()
+            s.sendall(choice.encode('utf-8'))
+            data = s.recv(1024)
+            choice_text.value = f"You chose {choice}, Opponent chose {data.decode('utf-8')}"
+            evaluate_winner(choice, data.decode('utf-8'))
     except ConnectionRefusedError:
         connected_to_text.value = f"Couldn't connect to {host_input.value}"
     except OSError:
         connected_to_text.value = "An invalid address was entered"
 
-def evaluate_winner():
-    pass
+def evaluate_winner(user_choice, opponent_choice):
+    WINNING_CASES = [
+        ["scissors", "paper"],
+        ["rock", "scissors"],
+        ["paper", "rock"]
+    ]
+    global message
+    message = ""
+    if user_choice == opponent_choice:
+        message = "Tie game!"
+    elif [user_choice, opponent_choice] in WINNING_CASES:
+        message = "You win!"
+    else:
+        message = "You lose!"
+    connected_to_text.value = message
 
 def set_choice(action_choice):
     global choice
     choice = action_choice
-    print("choice was selected")
+    choice_text.value = "Waiting for opponent to make their choice..."
+    choice_set.set()
 
 app = App(title="Rock, Paper, Scissors", layout="grid", width=700, height=300)
 
 ip_text = Text(app, text=HOST, grid=[0, 0])
 connected_to_text = Text(app, text="Not connected right now", grid=[0, 1])
+choice_text = Text(app, text="", grid=[0, 2])
 
-host_label = Text(app, text="Host:", grid=[0, 2])
-host_input = TextBox(app, width="fill", grid=[1, 2])
-connect_button = PushButton(app, text="Connect", grid=[2, 2], command=call_client)
-wait_for_connection_button = PushButton(app, text="Wait for connection", grid=[3, 2], command=call_server)
+host_label = Text(app, text="Host:", grid=[0, 3])
+host_input = TextBox(app, width="fill", grid=[1, 3])
+connect_button = PushButton(app, text="Connect", grid=[2, 3], command=call_client)
+wait_for_connection_button = PushButton(app, text="Wait for connection", grid=[3, 3], command=call_server)
 
-rock_button = PushButton(app, text="Rock", grid=[0, 4], command=lambda: set_choice("rock"))
-paper_button = PushButton(app, text="Paper", grid=[1, 4], command=lambda: set_choice("paper"))
-scissors_button = PushButton(app, text="Scissors", grid=[2, 4], command=lambda: set_choice("scissors"))
+rock_button = PushButton(app, text="Rock", grid=[0, 5], command=lambda: set_choice("rock"))
+paper_button = PushButton(app, text="Paper", grid=[1, 5], command=lambda: set_choice("paper"))
+scissors_button = PushButton(app, text="Scissors", grid=[2, 5], command=lambda: set_choice("scissors"))
 
-name_label = Text(app, text="Name:", grid=[0, 3])
-name_input = TextBox(app, width="fill", text="Default", grid=[1, 3])
+name_label = Text(app, text="Name:", grid=[0, 4])
+name_input = TextBox(app, width="fill", text="Default", grid=[1, 4])
 
 app.display()

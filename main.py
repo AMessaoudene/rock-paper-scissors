@@ -198,6 +198,8 @@ def reset_game_ui():
     rock_button.hide()
     paper_button.hide()
     scissors_button.hide()
+    # Reset the connection status text
+    connection_status_text.value = "Not connected right now"
 
 # A method to set the round to be exited
 def exit_round_setup():

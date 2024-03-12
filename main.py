@@ -131,7 +131,6 @@ def client():
 
 # A method to return a message based on the game's outcome
 def evaluate_winner(user_choice, opponent_choice):
-
     # Different possible winning scenarios
     WINNING_CASES = [
         ["scissors", "paper"],
@@ -142,13 +141,13 @@ def evaluate_winner(user_choice, opponent_choice):
     message = ""
     # If the user and opponent have the same choice, the game is a tie
     if user_choice == opponent_choice:
-        message = "Tie game!"
+        message = "The game was a tie!"
     # If the user's scenario is one of the winning cases, the user wins
     elif [user_choice, opponent_choice] in WINNING_CASES:
-        message = "You win!"
+        message = "You won the game!"
     # Otherwise, the opponent wins
     else:
-        message = "You lose!"
+        message = "You lose the game!"
     # Display the winner
     connection_status_text.value = message
     # Make the exit button visible

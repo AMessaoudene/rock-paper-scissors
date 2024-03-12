@@ -38,7 +38,7 @@ def server():
     global server_running
     server_running = True
     # Display a waiting for connections message
-    connected_to_text.value = "Waiting for connections..."
+    connection_status_text.value = "Waiting for connections..."
     # Run the server on the IP address of this machine and the port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
@@ -50,7 +50,7 @@ def server():
             client_name_raw = conn.recv(1024)
             client_name = client_name_raw.decode('utf-8')
             # Display a message that a connection was established with the client
-            connected_to_text.value = f"Connected to {client_name}"
+            connection_status_text.value = f"Connected to {client_name}"
             # Get the user's name from the text box
             name = name_input.value
             # If the user did not input a name, use "Default" instead
@@ -86,7 +86,7 @@ def client():
     global client_running
     client_running = True
     # Display a connecting message
-    connected_to_text.value = "Connecting..."
+    connection_status_text.value = "Connecting..."
     try:
         # Connect to the server with the specified host IP address and port
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
@@ -102,7 +102,7 @@ def client():
             server_name_raw = conn.recv(1024)
             server_name = server_name_raw.decode('utf-8')
             # Display a message that a connection was established with the server
-            connected_to_text.value = f"Connected to {server_name}"
+            connection_status_text.value = f"Connected to {server_name}"
             # Wait for the user to make their choice
             choice_set.wait()
             choice_set.clear()
@@ -120,10 +120,10 @@ def client():
             exit_round.clear()
     # If the connection was refused, the specified host IP was unavailable
     except ConnectionRefusedError:
-        connected_to_text.value = f"Couldn't connect to {host_input.value}"
+        connection_status_text.value = f"Couldn't connect to {host_input.value}"
     # If there was another error, IP address was invalid
     except OSError:
-        connected_to_text.value = "An invalid address was entered"
+        connection_status_text.value = "An invalid address was entered"
     # Toggle some of the UI elements to reset the game
     reset_game_ui()
     # The client is no longer running
@@ -150,7 +150,7 @@ def evaluate_winner(user_choice, opponent_choice):
     else:
         message = "You lose!"
     # Display the winner
-    connected_to_text.value = message
+    connection_status_text.value = message
     # Make the exit button visible
     exit_button.show()
 
@@ -176,6 +176,9 @@ def start_game_ui():
     # Hide the name input
     name_label.hide()
     name_input.hide()
+    # Hide the connection buttons
+    connect_button.hide()
+    wait_for_connection_button.hide()
     # Show the choice buttons
     rock_button.show()
     paper_button.show()
@@ -188,6 +191,9 @@ def reset_game_ui():
     # Show the name input
     name_label.show()
     name_input.show()
+    # Show the connection buttons
+    connect_button.show()
+    wait_for_connection_button.show()
     # Hide the choice buttons
     rock_button.hide()
     paper_button.hide()
@@ -204,7 +210,7 @@ def exit_round_setup():
 app = App(title="Rock, Paper, Scissors", layout="grid", width=700, height=300)
 
 ip_text = Text(app, text=HOST, grid=[0, 0])
-connected_to_text = Text(app, text="Not connected right now", grid=[0, 1])
+connection_status_text = Text(app, text="Not connected right now", grid=[0, 1])
 choice_text = Text(app, text="", grid=[0, 2], visible=False)
 
 host_label = Text(app, text="Host:", grid=[0, 3])

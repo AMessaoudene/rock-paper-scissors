@@ -1,6 +1,54 @@
-from guizero import App, Text, TextBox, PushButton
+import sqlite3
+from guizero import App, Text, TextBox, PushButton, Window
 import threading
 import socket
+
+# Database setup
+def setup_database():
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Authentication functions
+def register_user():
+    username = username_input.value
+    password = password_input.value
+
+    if username and password:
+        conn = sqlite3.connect("users.db")
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+            conn.commit()
+            auth_status.value = "Registration successful!"
+        except sqlite3.IntegrityError:
+            auth_status.value = "Username already exists."
+        conn.close()
+    else:
+        auth_status.value = "Please fill in both fields."
+
+def login_user():
+    username = username_input.value
+    password = password_input.value
+
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user:
+        auth_window.hide()
+        main_window.show()
+    else:
+        auth_status.value = "Invalid username or password."
 
 # Host IP address and port
 HOST = "127.0.0.1"
@@ -148,24 +196,42 @@ def exit_round():
     exit_button.hide()
 
 # GUI Setup
-app = App(title="Rock, Paper, Scissors", layout="grid", width=700, height=400)
+app = App(title="Rock, Paper, Scissors", width=700, height=400, visible=False)
 
-ip_text = Text(app, text=f"Your IP: {HOST}", grid=[0, 0])
-connection_status_text = Text(app, text="Not connected right now", grid=[0, 1])
-choice_text = Text(app, text="", grid=[0, 2])
+# Authentication window
+auth_window = Window(app, title="Login", width=400, height=300)
+auth_window.when_closed = app.destroy
 
-host_label = Text(app, text="Host:", grid=[0, 3])
-host_input = TextBox(app, width="fill", grid=[1, 3])
-connect_button = PushButton(app, text="Connect", grid=[2, 3], command=start_client)
-wait_for_connection_button = PushButton(app, text="Wait for Connection", grid=[3, 3], command=start_server)
+Text(auth_window, text="Username:")
+username_input = TextBox(auth_window, width="fill")
+Text(auth_window, text="Password:")
+password_input = TextBox(auth_window, width="fill", hide_text=True)
 
-rock_button = PushButton(app, text="Rock", grid=[0, 5], command=lambda: set_choice("rock"), visible=False)
-paper_button = PushButton(app, text="Paper", grid=[1, 5], command=lambda: set_choice("paper"), visible=False)
-scissors_button = PushButton(app, text="Scissors", grid=[2, 5], command=lambda: set_choice("scissors"), visible=False)
+auth_status = Text(auth_window, text="")
+PushButton(auth_window, text="Login", command=login_user)
+PushButton(auth_window, text="Register", command=register_user)
 
-name_label = Text(app, text="Name:", grid=[0, 4])
-name_input = TextBox(app, width="fill", grid=[1, 4], text="Default")
+# Main game window (hidden until login)
+main_window = Window(app, title="Rock, Paper, Scissors", width=700, height=400, visible=False)
 
-exit_button = PushButton(app, text="Exit", grid=[0, 6], command=exit_round, visible=False)
+ip_text = Text(main_window, text=f"Your IP: {HOST}", grid=[0, 0])
+connection_status_text = Text(main_window, text="Not connected right now", grid=[0, 1])
+choice_text = Text(main_window, text="", grid=[0, 2])
 
+host_label = Text(main_window, text="Host:", grid=[0, 3])
+host_input = TextBox(main_window, width="fill", grid=[1, 3])
+connect_button = PushButton(main_window, text="Connect", grid=[2, 3], command=start_client)
+wait_for_connection_button = PushButton(main_window, text="Wait for Connection", grid=[3, 3], command=start_server)
+
+rock_button = PushButton(main_window, text="Rock", grid=[0, 5], command=lambda: set_choice("rock"), visible=False)
+paper_button = PushButton(main_window, text="Paper", grid=[1, 5], command=lambda: set_choice("paper"), visible=False)
+scissors_button = PushButton(main_window, text="Scissors", grid=[2, 5], command=lambda: set_choice("scissors"), visible=False)
+
+name_label = Text(main_window, text="Name:", grid=[0, 4])
+name_input = TextBox(main_window, width="fill", text="Default")
+
+exit_button = PushButton(main_window, text="Exit", grid=[0, 6], command=exit_round, visible=False)
+
+auth_window.show()
+setup_database()
 app.display()

@@ -2,230 +2,170 @@ from guizero import App, Text, TextBox, PushButton
 import threading
 import socket
 
-# Host IP address
-HOST = socket.gethostbyname(socket.gethostname())
-# Port number
+# Host IP address and port
+HOST = "127.0.0.1"
 PORT = 5555
-# Store if the server or client is running
-server_running = False
-client_running = False
-# Event to store if the choice has been set
-choice_set = threading.Event()
-# Event to store if the round should be exited
-exit_round = threading.Event()
 
-# Method to call the server as a thread
-def call_server():
-    # Don't call the server if it's already running
-    if server_running == False:
-        server_thread = threading.Thread(target=server)
-        server_thread.daemon = True
-        server_thread.start()
+# State management flags
+game_state = {
+    "server_running": False,
+    "client_running": False,
+    "round_exit": threading.Event(),
+    "choice_set": threading.Event()
+}
 
-# Method to call the client as a thread
-def call_client():
-    # Don't call the client if it's already running
-    if client_running == False:
-        client_thread = threading.Thread(target=client)
-        client_thread.daemon = True
-        client_thread.start()
+# Player choice
+game_choices = {
+    "user_choice": None,
+    "opponent_choice": None
+}
 
-# The server method to wait for client connections
-def server():
-    # Toggle some of the UI elements to start the game
-    start_game_ui()
-    # The server has started running
-    global server_running
-    server_running = True
-    # Display a waiting for connections message
+# Winning scenarios
+WINNING_CASES = [
+    ["scissors", "paper"],
+    ["rock", "scissors"],
+    ["paper", "rock"]
+]
+
+def start_server():
+    if not game_state["server_running"]:
+        threading.Thread(target=server_thread, daemon=True).start()
+
+def start_client():
+    if not game_state["client_running"]:
+        threading.Thread(target=client_thread, daemon=True).start()
+
+def server_thread():
+    setup_game_ui("server")
+    game_state["server_running"] = True
     connection_status_text.value = "Waiting for connections..."
-    # Run the server on the IP address of this machine and the port
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
-        # Accept the first connection from a client
-        conn, _ = s.accept()
-        with conn:
-            # Receive the client's name
-            client_name_raw = conn.recv(1024)
-            client_name = client_name_raw.decode('utf-8')
-            # Display a message that a connection was established with the client
-            connection_status_text.value = f"Connected to {client_name}"
-            # Get the user's name from the text box
-            name = name_input.value
-            # If the user did not input a name, use "Default" instead
-            if name_input.value == "":
-                name = "Default"
-            # Send the server's name to the client
-            conn.sendall(name.encode('utf-8'))
-            # Receive the client's choice
-            client_choice_raw = conn.recv(1024)
-            client_choice = client_choice_raw.decode('utf-8')
-            # Wait for the user to make their choice
-            choice_set.wait()
-            choice_set.clear()
-            # Display a message with the user's choice and the client's choice
-            choice_text.value = f"You chose {choice}, opponent chose {client_choice}"
-            # Send the server's choice to the client
-            conn.sendall(choice.encode('utf-8'))
-            # Evaluate the winner of the game
-            evaluate_winner(choice, client_choice)
-            # Wait for the round to exit
-            exit_round.wait()
-            exit_round.clear()
-    # Toggle some of the UI elements to reset the game
-    reset_game_ui()
-    # The server is no longer running
-    server_running = False
 
-# The client method to connect to a server
-def client():
-    # Toggle some of the UI elements to start the game
-    start_game_ui()
-    # The client has started running
-    global client_running
-    client_running = True
-    # Display a connecting message
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.bind((HOST, PORT))
+        server_socket.listen()
+        conn, _ = server_socket.accept()
+
+        with conn:
+            handle_connection(conn, role="server")
+
+    reset_game_ui()
+    game_state["server_running"] = False
+
+def client_thread():
+    setup_game_ui("client")
+    game_state["client_running"] = True
     connection_status_text.value = "Connecting..."
+
     try:
-        # Connect to the server with the specified host IP address and port
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
-            conn.connect((host_input.value, PORT))
-            # Get the user's name from the text box
-            name = name_input.value
-            # If the user did not input a name, use "Default" instead
-            if name_input.value == "":
-                name = "Default"
-            # Send the client's name to the server
-            conn.sendall(name.encode('utf-8'))
-            # Receive the server's name
-            server_name_raw = conn.recv(1024)
-            server_name = server_name_raw.decode('utf-8')
-            # Display a message that a connection was established with the server
-            connection_status_text.value = f"Connected to {server_name}"
-            # Wait for the user to make their choice
-            choice_set.wait()
-            choice_set.clear()
-            # Send the client's choice to the server
-            conn.sendall(choice.encode('utf-8'))
-            # Receive the server's choice
-            server_choice_raw = conn.recv(1024)
-            server_choice = server_choice_raw.decode('utf-8')
-            # Display a message with the user's choice and the server's choice
-            choice_text.value = f"You chose {choice}, opponent chose {server_choice}"
-            # Evaluate the winner of the game
-            evaluate_winner(choice, server_choice)
-            # Wait for the round to exit
-            exit_round.wait()
-            exit_round.clear()
-    # If the connection was refused, the specified host IP was unavailable
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            client_socket.connect((host_input.value, PORT))
+            handle_connection(client_socket, role="client")
     except ConnectionRefusedError:
         connection_status_text.value = f"Couldn't connect to {host_input.value}"
-    # If there was another error, IP address was invalid
     except OSError:
-        connection_status_text.value = "An invalid address was entered"
-    # Toggle some of the UI elements to reset the game
-    reset_game_ui()
-    # The client is no longer running
-    client_running = False
+        connection_status_text.value = "Invalid address entered"
 
-# A method to return a message based on the game's outcome
-def evaluate_winner(user_choice, opponent_choice):
-    # Different possible winning scenarios
-    WINNING_CASES = [
-        ["scissors", "paper"],
-        ["rock", "scissors"],
-        ["paper", "rock"]
-    ]
-    global message
-    message = ""
-    # If the user and opponent have the same choice, the game is a tie
-    if user_choice == opponent_choice:
-        message = "The game was a tie!"
-    # If the user's scenario is one of the winning cases, the user wins
-    elif [user_choice, opponent_choice] in WINNING_CASES:
-        message = "You won the game!"
-    # Otherwise, the opponent wins
+    reset_game_ui()
+    game_state["client_running"] = False
+
+def handle_connection(conn, role):
+    local_name = name_input.value or "Default"
+
+    if role == "server":
+        conn.sendall(local_name.encode())
+        opponent_name = conn.recv(1024).decode()
     else:
-        message = "You lose the game!"
-    # Display the winner
-    connection_status_text.value = message
-    # Make the exit button visible
+        conn.sendall(local_name.encode())
+        opponent_name = conn.recv(1024).decode()
+
+    connection_status_text.value = f"Connected to {opponent_name}"
+
+    game_state["choice_set"].wait()
+    game_state["choice_set"].clear()
+
+    conn.sendall(game_choices["user_choice"].encode())
+    game_choices["opponent_choice"] = conn.recv(1024).decode()
+
+    display_results()
+
+    game_state["round_exit"].wait()
+    game_state["round_exit"].clear()
+
+def set_choice(choice):
+    game_choices["user_choice"] = choice
+    game_state["choice_set"].set()
+    toggle_choice_buttons(False)
+    choice_text.value = "Waiting for opponent to make their choice..."
+
+def evaluate_winner():
+    user = game_choices["user_choice"]
+    opponent = game_choices["opponent_choice"]
+
+    if user == opponent:
+        return "The game was a tie!"
+    elif [user, opponent] in WINNING_CASES:
+        return "You won the game!"
+    else:
+        return "You lost the game!"
+
+def display_results():
+    result_message = evaluate_winner()
+    connection_status_text.value = result_message
+    choice_text.value = f"You chose {game_choices['user_choice']}, opponent chose {game_choices['opponent_choice']}"
     exit_button.show()
 
-# A method for the user to set their choice
-def set_choice(action_choice):
-    # Hide all of the choice buttons
-    rock_button.hide()
-    paper_button.hide()
-    scissors_button.hide()
-    # Set the user's choice
-    global choice
-    choice = action_choice
-    # Display a waiting for opponent's choice message
-    choice_text.value = "Waiting for opponent to make their choice..."
-    # Set the event to notify the server or client that the choice has been set
-    choice_set.set()
-
-# Hide certain UI elements when the game has begun
-def start_game_ui():
-    # Hide the host address input
-    host_label.hide()
-    host_input.hide()
-    # Hide the name input
-    name_label.hide()
-    name_input.hide()
-    # Hide the connection buttons
-    connect_button.hide()
-    wait_for_connection_button.hide()
-    # Show the choice buttons
-    rock_button.show()
-    paper_button.show()
-    scissors_button.show()
+def setup_game_ui(role):
+    toggle_ui_elements(False)
+    toggle_choice_buttons(True)
+    if role == "server":
+        host_label.hide()
+        host_input.hide()
 
 def reset_game_ui():
-    # Show the host address input
-    host_label.show()
-    host_input.show()
-    # Show the name input
-    name_label.show()
-    name_input.show()
-    # Show the connection buttons
-    connect_button.show()
-    wait_for_connection_button.show()
-    # Hide the choice buttons
-    rock_button.hide()
-    paper_button.hide()
-    scissors_button.hide()
-    # Reset the connection status text
+    toggle_ui_elements(True)
+    toggle_choice_buttons(False)
     connection_status_text.value = "Not connected right now"
+    choice_text.value = ""
 
-# A method to set the round to be exited
-def exit_round_setup():
-    # Set the exit event
-    exit_round.set()
-    # Hide the exit button
+def toggle_ui_elements(visible):
+    elements = [host_label, host_input, name_label, name_input, connect_button, wait_for_connection_button]
+    for element in elements:
+        if visible:
+            element.show()
+        else:
+            element.hide()
+
+def toggle_choice_buttons(visible):
+    buttons = [rock_button, paper_button, scissors_button]
+    for button in buttons:
+        if visible:
+            button.show()
+        else:
+            button.hide()
+
+def exit_round():
+    game_state["round_exit"].set()
     exit_button.hide()
 
-# The main app that contains all of the UI
-app = App(title="Rock, Paper, Scissors", layout="grid", width=700, height=300)
+# GUI Setup
+app = App(title="Rock, Paper, Scissors", layout="grid", width=700, height=400)
 
-ip_text = Text(app, text=HOST, grid=[0, 0])
+ip_text = Text(app, text=f"Your IP: {HOST}", grid=[0, 0])
 connection_status_text = Text(app, text="Not connected right now", grid=[0, 1])
-choice_text = Text(app, text="", grid=[0, 2], visible=False)
+choice_text = Text(app, text="", grid=[0, 2])
 
 host_label = Text(app, text="Host:", grid=[0, 3])
 host_input = TextBox(app, width="fill", grid=[1, 3])
-connect_button = PushButton(app, text="Connect", grid=[2, 3], command=call_client)
-wait_for_connection_button = PushButton(app, text="Wait for connection", grid=[3, 3], command=call_server)
+connect_button = PushButton(app, text="Connect", grid=[2, 3], command=start_client)
+wait_for_connection_button = PushButton(app, text="Wait for Connection", grid=[3, 3], command=start_server)
 
 rock_button = PushButton(app, text="Rock", grid=[0, 5], command=lambda: set_choice("rock"), visible=False)
 paper_button = PushButton(app, text="Paper", grid=[1, 5], command=lambda: set_choice("paper"), visible=False)
 scissors_button = PushButton(app, text="Scissors", grid=[2, 5], command=lambda: set_choice("scissors"), visible=False)
 
 name_label = Text(app, text="Name:", grid=[0, 4])
-name_input = TextBox(app, width="fill", text="Default", grid=[1, 4])
+name_input = TextBox(app, width="fill", grid=[1, 4], text="Default")
 
-exit_button = PushButton(app, text="Exit", grid=[0, 5], visible=False, command=exit_round_setup)
+exit_button = PushButton(app, text="Exit", grid=[0, 6], command=exit_round, visible=False)
 
 app.display()

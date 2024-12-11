@@ -1,4 +1,5 @@
 import sqlite3
+import hashlib
 from guizero import App, Text, TextBox, PushButton, Window
 import threading
 import socket
@@ -16,16 +17,21 @@ def setup_database():
     conn.commit()
     conn.close()
 
+# Utility function for hashing passwords
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
 # Authentication functions
 def register_user():
     username = username_input.value
     password = password_input.value
 
     if username and password:
+        hashed_password = hash_password(password)
         conn = sqlite3.connect("users.db")
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
             conn.commit()
             auth_status.value = "Registration successful!"
         except sqlite3.IntegrityError:
@@ -38,9 +44,10 @@ def login_user():
     username = username_input.value
     password = password_input.value
 
+    hashed_password = hash_password(password)
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
     user = cursor.fetchone()
     conn.close()
 

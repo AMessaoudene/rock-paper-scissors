@@ -1,6 +1,6 @@
 import sqlite3
 import hashlib
-from guizero import App, Text, TextBox, PushButton, Window
+from guizero import App, Text, TextBox, PushButton, Window, ListBox
 import threading
 import socket
 
@@ -11,7 +11,8 @@ def setup_database():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            score INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -52,10 +53,30 @@ def login_user():
     conn.close()
 
     if user:
+        global current_user
+        current_user = username
         auth_window.hide()
         main_window.show()
     else:
         auth_status.value = "Invalid username or password."
+
+# Update score after the game
+def update_score(username, delta):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET score = score + ? WHERE username = ?", (delta, username))
+    conn.commit()
+    conn.close()
+
+# Display leaderboard
+def show_leaderboard():
+    leaderboard_list.clear()
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, score FROM users ORDER BY score DESC")
+    for row in cursor.fetchall():
+        leaderboard_list.append(f"{row[0]}: {row[1]} points")
+    conn.close()
 
 # Host IP address and port
 HOST = "127.0.0.1"
@@ -157,16 +178,17 @@ def evaluate_winner():
     opponent = game_choices["opponent_choice"]
 
     if user == opponent:
-        return "The game was a tie!"
+        return "The game was a tie!", 0
     elif [user, opponent] in WINNING_CASES:
-        return "You won the game!"
+        return "You won the game!", 1
     else:
-        return "You lost the game!"
+        return "You lost the game!", -1
 
 def display_results():
-    result_message = evaluate_winner()
+    result_message, score_delta = evaluate_winner()
     connection_status_text.value = result_message
     choice_text.value = f"You chose {game_choices['user_choice']}, opponent chose {game_choices['opponent_choice']}"
+    update_score(current_user, score_delta)
     exit_button.show()
 
 def setup_game_ui(role):
@@ -238,6 +260,12 @@ name_label = Text(main_window, text="Name:", grid=[0, 4])
 name_input = TextBox(main_window, width="fill", text="Default")
 
 exit_button = PushButton(main_window, text="Exit", grid=[0, 6], command=exit_round, visible=False)
+
+# Leaderboard window
+leaderboard_window = Window(app, title="Leaderboard", width=400, height=300, visible=False)
+leaderboard_list = ListBox(leaderboard_window, items=[], width="fill", height="fill")
+PushButton(leaderboard_window, text="Close", command=leaderboard_window.hide)
+PushButton(main_window, text="Leaderboard", grid=[0, 7], command=lambda: [leaderboard_window.show(), show_leaderboard()])
 
 auth_window.show()
 setup_database()

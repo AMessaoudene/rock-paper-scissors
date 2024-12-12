@@ -3,14 +3,10 @@ import hashlib
 from guizero import App, Text, TextBox, PushButton, Window, ListBox
 import threading
 import socket
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+import queue
 
 # Database setup
 def setup_database():
-    logging.info("Setting up the database.")
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -25,15 +21,12 @@ def setup_database():
 
 # Utility function for hashing passwords
 def hash_password(password):
-    logging.debug("Hashing password.")
     return hashlib.sha256(password.encode()).hexdigest()
 
 # Authentication functions
 def register_user():
     username = username_input.value
     password = password_input.value
-
-    logging.info(f"Attempting to register user: {username}")
 
     if username and password:
         hashed_password = hash_password(password)
@@ -43,20 +36,15 @@ def register_user():
             cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
             conn.commit()
             auth_status.value = "Registration successful!"
-            logging.info(f"User {username} registered successfully.")
         except sqlite3.IntegrityError:
             auth_status.value = "Username already exists."
-            logging.warning(f"Registration failed. Username {username} already exists.")
         conn.close()
     else:
         auth_status.value = "Please fill in both fields."
-        logging.warning("Registration failed. Missing username or password.")
 
 def login_user():
     username = username_input.value
     password = password_input.value
-
-    logging.info(f"Attempting to log in user: {username}")
 
     hashed_password = hash_password(password)
     conn = sqlite3.connect("users.db")
@@ -70,14 +58,11 @@ def login_user():
         current_user = username
         auth_window.hide()
         main_window.show()
-        logging.info(f"User {username} logged in successfully.")
     else:
         auth_status.value = "Invalid username or password."
-        logging.warning(f"Login failed for user {username}.")
 
 # Update score after the game
 def update_score(username, delta):
-    logging.info(f"Updating score for user {username} by {delta}.")
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET score = score + ? WHERE username = ?", (delta, username))
@@ -86,7 +71,6 @@ def update_score(username, delta):
 
 # Display leaderboard
 def show_leaderboard():
-    logging.info("Displaying leaderboard.")
     leaderboard_list.clear()
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
@@ -98,6 +82,7 @@ def show_leaderboard():
 # Host IP address and port
 HOST = "127.0.0.1"
 PORT = 5555
+MM_PORT = 5556
 
 # State management flags
 game_state = {
@@ -120,18 +105,18 @@ WINNING_CASES = [
     ["paper", "rock"]
 ]
 
+# Matchmaking queue
+matchmaking_queue = queue.Queue()
+
 def start_server():
     if not game_state["server_running"]:
-        logging.info("Starting server thread.")
         threading.Thread(target=server_thread, daemon=True).start()
 
 def start_client():
     if not game_state["client_running"]:
-        logging.info("Starting client thread.")
         threading.Thread(target=client_thread, daemon=True).start()
 
 def server_thread():
-    logging.info("Server thread started.")
     setup_game_ui("server")
     game_state["server_running"] = True
     connection_status_text.value = "Waiting for connections..."
@@ -141,17 +126,13 @@ def server_thread():
         server_socket.listen()
         conn, _ = server_socket.accept()
 
-        logging.info("Client connected to the server.")
-
         with conn:
             handle_connection(conn, role="server")
 
     reset_game_ui()
     game_state["server_running"] = False
-    logging.info("Server thread stopped.")
 
 def client_thread():
-    logging.info("Client thread started.")
     setup_game_ui("client")
     game_state["client_running"] = True
     connection_status_text.value = "Connecting..."
@@ -159,23 +140,17 @@ def client_thread():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.connect((host_input.value, PORT))
-            logging.info("Client connected to the server.")
             handle_connection(client_socket, role="client")
     except ConnectionRefusedError:
         connection_status_text.value = f"Couldn't connect to {host_input.value}"
-        logging.error(f"Connection refused to {host_input.value}.")
     except OSError:
         connection_status_text.value = "Invalid address entered"
-        logging.error("Invalid address entered.")
 
     reset_game_ui()
     game_state["client_running"] = False
-    logging.info("Client thread stopped.")
 
 def handle_connection(conn, role):
     local_name = name_input.value or "Default"
-
-    logging.info(f"Handling connection as {role}.")
 
     if role == "server":
         conn.sendall(local_name.encode())
@@ -183,8 +158,6 @@ def handle_connection(conn, role):
     else:
         conn.sendall(local_name.encode())
         opponent_name = conn.recv(1024).decode()
-
-    logging.info(f"Connected to opponent: {opponent_name}")
 
     connection_status_text.value = f"Connected to {opponent_name}"
 
@@ -194,15 +167,12 @@ def handle_connection(conn, role):
     conn.sendall(game_choices["user_choice"].encode())
     game_choices["opponent_choice"] = conn.recv(1024).decode()
 
-    logging.info(f"User choice: {game_choices['user_choice']}, Opponent choice: {game_choices['opponent_choice']}.")
-
     display_results()
 
     game_state["round_exit"].wait()
     game_state["round_exit"].clear()
 
 def set_choice(choice):
-    logging.info(f"User selected choice: {choice}")
     game_choices["user_choice"] = choice
     game_state["choice_set"].set()
     toggle_choice_buttons(False)
@@ -213,13 +183,10 @@ def evaluate_winner():
     opponent = game_choices["opponent_choice"]
 
     if user == opponent:
-        logging.info("Game was a tie.")
         return "The game was a tie!", 0
     elif [user, opponent] in WINNING_CASES:
-        logging.info("User won the game.")
         return "You won the game!", 1
     else:
-        logging.info("User lost the game.")
         return "You lost the game!", -1
 
 def display_results():
@@ -230,7 +197,6 @@ def display_results():
     exit_button.show()
 
 def setup_game_ui(role):
-    logging.info(f"Setting up game UI for {role}.")
     toggle_ui_elements(False)
     toggle_choice_buttons(True)
     if role == "server":
@@ -238,14 +204,13 @@ def setup_game_ui(role):
         host_input.hide()
 
 def reset_game_ui():
-    logging.info("Resetting game UI.")
     toggle_ui_elements(True)
     toggle_choice_buttons(False)
     connection_status_text.value = "Not connected right now"
     choice_text.value = ""
 
 def toggle_ui_elements(visible):
-    elements = [host_label, host_input, name_label, name_input, connect_button, wait_for_connection_button]
+    elements = [host_label, host_input, name_label, name_input, connect_button, wait_for_connection_button, matchmaking_button]
     for element in elements:
         if visible:
             element.show()
@@ -261,9 +226,43 @@ def toggle_choice_buttons(visible):
             button.hide()
 
 def exit_round():
-    logging.info("Exiting round.")
     game_state["round_exit"].set()
     exit_button.hide()
+
+# Matchmaking functions
+def join_matchmaking():
+    connection_status_text.value = "Joining matchmaking..."
+    threading.Thread(target=matchmaking_client_thread, daemon=True).start()
+
+def matchmaking_client_thread():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as mm_socket:
+        mm_socket.connect((HOST, MM_PORT))
+        mm_socket.sendall(current_user.encode())
+        opponent_ip = mm_socket.recv(1024).decode()
+
+    if opponent_ip == "host":
+        start_server()
+    else:
+        host_input.value = opponent_ip
+        start_client()
+
+# Matchmaking server thread
+def matchmaking_server():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as mm_server_socket:
+        mm_server_socket.bind((HOST, MM_PORT))
+        mm_server_socket.listen()
+        while True:
+            conn, addr = mm_server_socket.accept()
+            username = conn.recv(1024).decode()
+            matchmaking_queue.put((conn, username))
+
+            if matchmaking_queue.qsize() >= 2:
+                player1, player2 = matchmaking_queue.get(), matchmaking_queue.get()
+                player1[0].sendall(b"host")
+                player2[0].sendall(player1[1].encode())
+
+# Start matchmaking server thread
+threading.Thread(target=matchmaking_server, daemon=True).start()
 
 # GUI Setup
 app = App(title="Rock, Paper, Scissors", width=700, height=400, visible=False)
@@ -292,6 +291,7 @@ host_label = Text(main_window, text="Host:", grid=[0, 3])
 host_input = TextBox(main_window, width="fill", grid=[1, 3])
 connect_button = PushButton(main_window, text="Connect", grid=[2, 3], command=start_client)
 wait_for_connection_button = PushButton(main_window, text="Wait for Connection", grid=[3, 3], command=start_server)
+matchmaking_button = PushButton(main_window, text="Join Matchmaking", grid=[4, 3], command=join_matchmaking)
 
 rock_button = PushButton(main_window, text="Rock", grid=[0, 5], command=lambda: set_choice("rock"), visible=False)
 paper_button = PushButton(main_window, text="Paper", grid=[1, 5], command=lambda: set_choice("paper"), visible=False)
